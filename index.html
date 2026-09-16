@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Rota de Entregas</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --card: #1a2330;
+      --text: #e8eef5;
+      --muted: #93a4b8;
+      --accent: #ee4d2d;
+      --ok: #2ecc71;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 16px;
+    }
+    h1 { font-size: 1.25rem; margin: 0 0 8px; }
+    p { color: var(--muted); font-size: 0.92rem; line-height: 1.4; }
+    .card {
+      background: var(--card);
+      border-radius: 14px;
+      padding: 14px;
+      margin: 12px 0;
+    }
+    label { display: block; font-size: 0.85rem; margin: 10px 0 6px; }
+    input, textarea {
+      width: 100%;
+      background: #0d1218;
+      color: var(--text);
+      border: 1px solid #2c3a4d;
+      border-radius: 10px;
+      padding: 10px;
+      font-size: 16px;
+    }
+    textarea { min-height: 180px; resize: vertical; }
+    button {
+      width: 100%;
+      border: 0;
+      border-radius: 10px;
+      padding: 12px;
+      margin-top: 10px;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .pri { background: var(--accent); color: #fff; }
+    .sec { background: #2c3a4d; color: #fff; }
+    .ok { color: var(--ok); }
+    .err { color: #ff6b6b; white-space: pre-wrap; }
+    ol { padding-left: 20px; }
+    li { margin: 6px 0; }
+    small { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <h1>Rota de Entregas</h1>
+  <p>Cola os endereços, um por linha. Usa a cota grátis da Routes API (até 10 paradas por trecho no modo Essentials).</p>
+
+  <div class="card">
+    <label>Chave da API do Google (fica só neste celular)</label>
+    <input id="apiKey" type="password" autocomplete="off" placeholder="AIza..." />
+    <label>Ponto de partida (opcional)</label>
+    <input id="origem" placeholder="Ex.: Hub SPX, Rua X, 100, São Paulo" />
+    <label>Endereços (um por linha)</label>
+    <textarea id="lista" placeholder="Rua A, 10, Bairro, Cidade&#10;Rua B, 20, Bairro, Cidade"></textarea>
+    <button class="pri" id="btnOtimizar">Otimizar rota</button>
+    <button class="sec" id="btnMaps" disabled>Abrir no Google Maps</button>
+    <p id="status"></p>
+  </div>
+
+  <div class="card" id="resultado" hidden>
+    <strong>Ordem sugerida</strong>
+    <ol id="ordem"></ol>
+    <small>Se passar de 10 endereços, o app divide em trechos pra não sair do plano Essentials.</small>
+  </div>
+
+  <script>
+    const KEY = "rota_api_key";
+    const apiKeyEl = document.getElementById("apiKey");
+    const origemEl = document.getElementById("origem");
+    const listaEl = document.getElementById("lista");
+    const statusEl = document.getElementById("status");
+    const ordemEl = document.getElementById("ordem");
+    const resultadoEl = document.getElementById("resultado");
+    const btnMaps = document.getElementById("btnMaps");
+    let lastOrdered = [];
+
+    apiKeyEl.value = localStorage.getItem(KEY) || "";
+
+    function parseLista(texto) {
+      return texto.split(/\n+/).map(s => s.trim()).filter(Boolean);
+    }
+
+    function chunk(arr, size) {
+      const out = [];
+      for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+      return out;
+    }
+
+    function mapsUrl(stops) {
+      const pts = stops.map(s => encodeURIComponent(s));
+      if (pts.length === 1) return `https://www.google.com/maps/dir/?api=1&destination=${pts[0]}`;
+      const origin = pts[0];
+      const dest = pts[pts.length - 1];
+      const wps = pts.slice(1, -1).join("|");
+      let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${dest}`;
+      if (wps) url += `&waypoints=${wps}`;
+      url += `&travelmode=driving`;
+      return url;
+    }
+
+    async function computeChunk(key, origin, stops) {
+      if (stops.length === 1) return stops;
+      const destination = stops[stops.length - 1];
+      const intermediates = stops.slice(0, -1).map(address => ({ address }));
+      const body = {
+        origin: { address: origin },
+        destination: { address: destination },
+        intermediates,
+        travelMode: "DRIVE",
+        languageCode: "pt-BR",
+        regionCode: "BR",
+        optimizeWaypointOrder: stops.length <= 10
+      };
+      const res = await fetch("https://routes.googleapis.com/directions/v2:computeRoutes", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Goog-Api-Key": key,
+          "X-Goog-FieldMask": "routes.optimizedIntermediateWaypointIndex,routes.distanceMeters,routes.duration"
+        },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        const msg = data.error?.message || JSON.stringify(data);
+        throw new Error(msg);
+      }
+      const idx = data.routes?.[0]?.optimizedIntermediateWaypointIndex;
+      if (!idx || !idx.length) return stops;
+      return idx.map(i => stops[i]).concat(destination);
+    }
+
+    document.getElementById("btnOtimizar").onclick = async () => {
+      const key = apiKeyEl.value.trim();
+      const stops = parseLista(listaEl.value);
+      statusEl.className = "";
+      statusEl.textContent = "";
+      btnMaps.disabled = true;
+      if (!key) { statusEl.className = "err"; statusEl.textContent = "Cola a chave da API."; return; }
+      if (!stops.length) { statusEl.className = "err"; statusEl.textContent = "Cola pelo menos um endereço."; return; }
+      localStorage.setItem(KEY, key);
+
+      const origem = origemEl.value.trim() || stops[0];
+      const grupos = chunk(stops, 10);
+      statusEl.textContent = "Otimizando...";
+      try {
+        const ordered = [];
+        let start = origem;
+        for (const grupo of grupos) {
+          const parte = await computeChunk(key, start, grupo);
+          ordered.push(...parte);
+          start = parte[parte.length - 1];
+        }
+        lastOrdered = [origem, ...ordered.filter((v, i, a) => a.indexOf(v) === i)];
+        ordemEl.innerHTML = "";
+        lastOrdered.forEach(s => {
+          const li = document.createElement("li");
+          li.textContent = s;
+          ordemEl.appendChild(li);
+        });
+        resultadoEl.hidden = false;
+        btnMaps.disabled = false;
+        statusEl.className = "ok";
+        statusEl.textContent = "Pronto. " + grupos.length + " requisição(ões) usadas nesta rota.";
+      } catch (e) {
+        statusEl.className = "err";
+        statusEl.textContent = "Erro da API:\n" + e.message;
+      }
+    };
+
+    btnMaps.onclick = () => {
+      if (!lastOrdered.length) return;
+      window.open(mapsUrl(lastOrdered.slice(0, 10)), "_blank");
+    };
+  </script>
+</body>
+</html>
