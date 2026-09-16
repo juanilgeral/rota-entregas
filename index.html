@@ -72,6 +72,7 @@
     <textarea id="lista" placeholder="Rua A, 10, Bairro, Cidade&#10;Rua B, 20, Bairro, Cidade"></textarea>
     <button class="pri" id="btnOtimizar">Otimizar rota</button>
     <button class="sec" id="btnMaps" disabled>Abrir no Google Maps</button>
+    <button class="sec" id="btnLimpar">Limpar rota</button>
     <p id="status"></p>
   </div>
 
@@ -83,6 +84,9 @@
 
   <script>
     const KEY = "rota_api_key";
+    const KEY_ORIGEM = "rota_origem";
+    const KEY_LISTA = "rota_lista";
+    const KEY_ORDEM = "rota_ordem";
     const apiKeyEl = document.getElementById("apiKey");
     const origemEl = document.getElementById("origem");
     const listaEl = document.getElementById("lista");
@@ -92,7 +96,33 @@
     const btnMaps = document.getElementById("btnMaps");
     let lastOrdered = [];
 
+    function mostrarOrdem(lista) {
+      ordemEl.innerHTML = "";
+      lista.forEach(s => {
+        const li = document.createElement("li");
+        li.textContent = s;
+        ordemEl.appendChild(li);
+      });
+      resultadoEl.hidden = lista.length === 0;
+      btnMaps.disabled = lista.length === 0;
+    }
+
+    function salvarCampos() {
+      localStorage.setItem(KEY, apiKeyEl.value.trim());
+      localStorage.setItem(KEY_ORIGEM, origemEl.value);
+      localStorage.setItem(KEY_LISTA, listaEl.value);
+      localStorage.setItem(KEY_ORDEM, JSON.stringify(lastOrdered));
+    }
+
     apiKeyEl.value = localStorage.getItem(KEY) || "";
+    origemEl.value = localStorage.getItem(KEY_ORIGEM) || "";
+    listaEl.value = localStorage.getItem(KEY_LISTA) || "";
+    try { lastOrdered = JSON.parse(localStorage.getItem(KEY_ORDEM) || "[]"); } catch (e) { lastOrdered = []; }
+    if (lastOrdered.length) mostrarOrdem(lastOrdered);
+
+    apiKeyEl.addEventListener("input", salvarCampos);
+    origemEl.addEventListener("input", salvarCampos);
+    listaEl.addEventListener("input", salvarCampos);
 
     function parseLista(texto) {
       return texto.split(/\n+/).map(s => s.trim()).filter(Boolean);
@@ -170,16 +200,10 @@
           start = parte[parte.length - 1];
         }
         lastOrdered = [origem, ...ordered.filter((v, i, a) => a.indexOf(v) === i)];
-        ordemEl.innerHTML = "";
-        lastOrdered.forEach(s => {
-          const li = document.createElement("li");
-          li.textContent = s;
-          ordemEl.appendChild(li);
-        });
-        resultadoEl.hidden = false;
-        btnMaps.disabled = false;
+        mostrarOrdem(lastOrdered);
+        salvarCampos();
         statusEl.className = "ok";
-        statusEl.textContent = "Pronto. " + grupos.length + " requisição(ões) usadas nesta rota.";
+        statusEl.textContent = "Pronto. " + grupos.length + " requisição(ões) usadas nesta rota. A lista fica salva neste celular.";
       } catch (e) {
         statusEl.className = "err";
         statusEl.textContent = "Erro da API:\n" + e.message;
@@ -189,6 +213,19 @@
     btnMaps.onclick = () => {
       if (!lastOrdered.length) return;
       window.open(mapsUrl(lastOrdered.slice(0, 10)), "_blank");
+    };
+
+    document.getElementById("btnLimpar").onclick = () => {
+      if (!confirm("Apagar endereços e rota salvos neste celular?")) return;
+      listaEl.value = "";
+      origemEl.value = "";
+      lastOrdered = [];
+      localStorage.removeItem(KEY_LISTA);
+      localStorage.removeItem(KEY_ORIGEM);
+      localStorage.removeItem(KEY_ORDEM);
+      mostrarOrdem([]);
+      statusEl.className = "";
+      statusEl.textContent = "Rota apagada. A chave da API continua salva.";
     };
   </script>
 </body>
