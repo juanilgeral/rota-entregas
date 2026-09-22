@@ -236,8 +236,15 @@
       return out;
     }
 
+    function coordNum(v) {
+      const n = Number(String(v).trim().replace(",", "."));
+      return isNaN(n) ? null : n;
+    }
+
     function pontoMaps(s) {
-      if (s && s.lat && s.lng) return Number(s.lat).toFixed(6) + "," + Number(s.lng).toFixed(6);
+      const lat = coordNum(s && s.lat);
+      const lng = coordNum(s && s.lng);
+      if (lat != null && lng != null) return lat + ", " + lng;
       return String(s && s.endereco ? s.endereco : s || "").trim();
     }
 
