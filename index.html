@@ -39,7 +39,7 @@
       padding: 10px;
       font-size: 16px;
     }
-    textarea { min-height: 180px; resize: vertical; }
+    textarea { min-height: 140px; resize: vertical; }
     button {
       width: 100%;
       border: 0;
@@ -54,39 +54,70 @@
     .sec { background: #2c3a4d; color: #fff; }
     .ok { color: var(--ok); }
     .err { color: #ff6b6b; white-space: pre-wrap; }
-    ol { padding-left: 20px; }
-    li { margin: 6px 0; }
+    ol.rota { list-style: none; padding: 0; margin: 0; }
+    .stop {
+      background: #0d1218;
+      border-radius: 12px;
+      padding: 10px;
+      margin: 8px 0;
+    }
+    .stop-top { display: flex; gap: 10px; align-items: flex-start; }
+    .badge {
+      min-width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      background: var(--accent);
+      color: #fff;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.05rem;
+    }
+    .stop h3 { margin: 0 0 4px; font-size: 0.95rem; }
+    .pkgs { color: var(--muted); font-size: 0.82rem; line-height: 1.35; }
     small { color: var(--muted); }
+    .stop.atual { outline: 2px solid var(--accent); }
+    .trecho { font-weight: 700; margin: 8px 0; }
   </style>
 </head>
 <body>
   <h1>Rota de Entregas</h1>
-  <p>Cola os endereços, um por linha. Usa a cota grátis da Routes API (até 10 paradas por trecho no modo Essentials).</p>
+  <p>Importa o romaneio da Shopee. O app junta pacotes do mesmo endereço, mostra a parada do carro e monta o trajeto sem voltar na mesma rua.</p>
 
   <div class="card">
     <label>Chave da API do Google (fica só neste celular)</label>
     <input id="apiKey" type="password" autocomplete="off" placeholder="AIza..." />
-    <label>Ponto de partida (opcional)</label>
-    <input id="origem" placeholder="Ex.: Hub SPX, Rua X, 100, São Paulo" />
-    <label>Endereços (um por linha)</label>
-    <textarea id="lista" placeholder="Rua A, 10, Bairro, Cidade&#10;Rua B, 20, Bairro, Cidade"></textarea>
+    <label>Onde você está agora (opcional)</label>
+    <input id="origem" placeholder="Rua atual ou hub" />
+    <label>Endereços (um por linha, se não usar Excel)</label>
+    <textarea id="lista" placeholder="Rua A, 10, Bairro, Cidade"></textarea>
+    <input id="arquivoExcel" type="file" accept=".xlsx,.xls,.csv" hidden />
+    <button class="sec" type="button" id="btnExcel">Importar romaneio da Shopee</button>
     <button class="pri" id="btnOtimizar">Otimizar rota</button>
-    <button class="sec" id="btnMaps" disabled>Abrir no Google Maps</button>
+    <button class="sec" id="btnMaps" disabled>Abrir este trecho no Maps</button>
+    <button class="sec" id="btnProx" disabled>Próximo trecho</button>
+    <button class="sec" id="btnAnt" disabled>Trecho anterior</button>
     <button class="sec" id="btnLimpar">Limpar rota</button>
     <p id="status"></p>
   </div>
 
   <div class="card" id="resultado" hidden>
-    <strong>Ordem sugerida</strong>
-    <ol id="ordem"></ol>
-    <small>Se passar de 10 endereços, o app divide em trechos pra não sair do plano Essentials.</small>
+    <strong>Ordem de paradas</strong>
+    <p class="trecho" id="infoTrecho"></p>
+    <p style="margin:6px 0 0">O número grande é a <b>parada do romaneio</b> (onde o pacote está no carro).</p>
+    <ol class="rota" id="ordem"></ol>
+    <small>O Maps abre 10 paradas por vez. Terminou o trecho, toca em Próximo trecho.</small>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script>
     const KEY = "rota_api_key";
     const KEY_ORIGEM = "rota_origem";
     const KEY_LISTA = "rota_lista";
+    const KEY_STOPS = "rota_stops";
     const KEY_ORDEM = "rota_ordem";
+    const KEY_TRECHO = "rota_trecho";
     const apiKeyEl = document.getElementById("apiKey");
     const origemEl = document.getElementById("origem");
     const listaEl = document.getElementById("lista");
@@ -94,35 +125,106 @@
     const ordemEl = document.getElementById("ordem");
     const resultadoEl = document.getElementById("resultado");
     const btnMaps = document.getElementById("btnMaps");
+    const btnProx = document.getElementById("btnProx");
+    const btnAnt = document.getElementById("btnAnt");
+    const infoTrecho = document.getElementById("infoTrecho");
+    let stops = [];
     let lastOrdered = [];
+    let trecho = 0;
+    const TAM = 10;
+
+    function norm(s) {
+      return String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim();
+    }
+
+    function acharCol(keys, nomes) {
+      for (const n of nomes) {
+        const hit = keys.find(k => {
+          const nk = norm(k);
+          return nk === n || nk.includes(n);
+        });
+        if (hit) return hit;
+      }
+      return null;
+    }
+
+    function chaveEndereco(end) {
+      return norm(end).replace(/[,.\-]/g, " ").replace(/\s+/g, " ");
+    }
+
+    function totalTrechos() {
+      return Math.max(1, Math.ceil((lastOrdered.length || 0) / TAM));
+    }
+
+    function faixaTrecho() {
+      const ini = trecho * TAM;
+      return lastOrdered.slice(ini, ini + TAM);
+    }
+
+    function atualizarTrecho() {
+      const tot = totalTrechos();
+      if (trecho >= tot) trecho = tot - 1;
+      if (trecho < 0) trecho = 0;
+      const ini = trecho * TAM;
+      const fim = Math.min(ini + TAM, lastOrdered.length);
+      infoTrecho.textContent = lastOrdered.length
+        ? ("Trecho " + (trecho + 1) + " de " + tot + " · paradas " + (ini + 1) + " a " + fim + " no trajeto")
+        : "";
+      btnMaps.disabled = !lastOrdered.length;
+      btnProx.disabled = trecho >= tot - 1;
+      btnAnt.disabled = trecho <= 0;
+      [...ordemEl.querySelectorAll(".stop")].forEach((el, i) => {
+        el.classList.toggle("atual", i >= ini && i < fim);
+      });
+      localStorage.setItem(KEY_TRECHO, String(trecho));
+    }
 
     function mostrarOrdem(lista) {
       ordemEl.innerHTML = "";
-      lista.forEach(s => {
+      lista.forEach((s, i) => {
         const li = document.createElement("li");
-        li.textContent = s;
+        li.className = "stop";
+        const parada = s.parada || (i + 1);
+        const pkgs = (s.pacotes || []).filter(Boolean);
+        li.innerHTML =
+          '<div class="stop-top"><div class="badge">' + parada + '</div><div>' +
+          "<h3>" + (i + 1) + "º no trajeto · " + (s.endereco || "") + "</h3>" +
+          '<div class="pkgs">' + (pkgs.length ? pkgs.length + " pacote(s): " + pkgs.join(" · ") : "Parada") + "</div>" +
+          "</div></div>";
         ordemEl.appendChild(li);
       });
       resultadoEl.hidden = lista.length === 0;
-      btnMaps.disabled = lista.length === 0;
+      atualizarTrecho();
     }
 
     function salvarCampos() {
       localStorage.setItem(KEY, apiKeyEl.value.trim());
       localStorage.setItem(KEY_ORIGEM, origemEl.value);
       localStorage.setItem(KEY_LISTA, listaEl.value);
+      localStorage.setItem(KEY_STOPS, JSON.stringify(stops));
       localStorage.setItem(KEY_ORDEM, JSON.stringify(lastOrdered));
+      localStorage.setItem(KEY_TRECHO, String(trecho));
     }
 
     apiKeyEl.value = localStorage.getItem(KEY) || "";
     origemEl.value = localStorage.getItem(KEY_ORIGEM) || "";
     listaEl.value = localStorage.getItem(KEY_LISTA) || "";
+    try { stops = JSON.parse(localStorage.getItem(KEY_STOPS) || "[]"); } catch (e) { stops = []; }
     try { lastOrdered = JSON.parse(localStorage.getItem(KEY_ORDEM) || "[]"); } catch (e) { lastOrdered = []; }
+    trecho = Number(localStorage.getItem(KEY_TRECHO) || 0) || 0;
     if (lastOrdered.length) mostrarOrdem(lastOrdered);
 
     apiKeyEl.addEventListener("input", salvarCampos);
     origemEl.addEventListener("input", salvarCampos);
-    listaEl.addEventListener("input", salvarCampos);
+    listaEl.addEventListener("input", () => {
+      stops = parseLista(listaEl.value).map((endereco, i) => ({
+        parada: i + 1,
+        endereco,
+        pacotes: [],
+        chave: chaveEndereco(endereco)
+      }));
+      salvarCampos();
+    });
 
     function parseLista(texto) {
       return texto.split(/\n+/).map(s => s.trim()).filter(Boolean);
@@ -134,30 +236,30 @@
       return out;
     }
 
-    function mapsUrl(stops) {
-      const pts = stops.map(s => encodeURIComponent(s));
+    function mapsUrl(items) {
+      const pts = items.map(s => encodeURIComponent(s.endereco || s));
       if (pts.length === 1) return `https://www.google.com/maps/dir/?api=1&destination=${pts[0]}`;
-      const origin = pts[0];
+      const origin = encodeURIComponent(origemEl.value.trim() || pts[0]);
       const dest = pts[pts.length - 1];
-      const wps = pts.slice(1, -1).join("|");
+      const wps = pts.slice(origemEl.value.trim() ? 0 : 1, -1).join("|");
       let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${dest}`;
       if (wps) url += `&waypoints=${wps}`;
       url += `&travelmode=driving`;
       return url;
     }
 
-    async function computeChunk(key, origin, stops) {
-      if (stops.length === 1) return stops;
-      const destination = stops[stops.length - 1];
-      const intermediates = stops.slice(0, -1).map(address => ({ address }));
+    async function computeChunk(key, origin, group) {
+      if (group.length === 1) return group;
+      const destination = group[group.length - 1];
+      const intermediates = group.slice(0, -1).map(s => ({ address: s.endereco }));
       const body = {
         origin: { address: origin },
-        destination: { address: destination },
+        destination: { address: destination.endereco },
         intermediates,
         travelMode: "DRIVE",
         languageCode: "pt-BR",
         regionCode: "BR",
-        optimizeWaypointOrder: stops.length <= 10
+        optimizeWaypointOrder: group.length <= 10
       };
       const res = await fetch("https://routes.googleapis.com/directions/v2:computeRoutes", {
         method: "POST",
@@ -174,36 +276,73 @@
         throw new Error(msg);
       }
       const idx = data.routes?.[0]?.optimizedIntermediateWaypointIndex;
-      if (!idx || !idx.length) return stops;
-      return idx.map(i => stops[i]).concat(destination);
+      if (!idx || !idx.length) return group;
+      return idx.map(i => group[i]).concat(destination);
+    }
+
+    function agruparPorEndereco(linhas) {
+      const map = {};
+      const ordem = [];
+      for (const l of linhas) {
+        const k = (l.parada != null && !isNaN(l.parada)) ? ("p" + l.parada) : (l.chave || chaveEndereco(l.endereco));
+        if (!map[k]) {
+          map[k] = {
+            parada: l.parada,
+            endereco: l.endereco,
+            pacotes: [],
+            chave: l.chave || k
+          };
+          ordem.push(k);
+        }
+        if (l.pacote) map[k].pacotes.push(l.pacote);
+        if (l.endereco && l.endereco.length > (map[k].endereco || "").length) map[k].endereco = l.endereco;
+      }
+      return ordem.map(k => map[k]);
     }
 
     document.getElementById("btnOtimizar").onclick = async () => {
       const key = apiKeyEl.value.trim();
-      const stops = parseLista(listaEl.value);
+      if (!stops.length) {
+        stops = parseLista(listaEl.value).map((endereco, i) => ({
+          parada: i + 1, endereco, pacotes: [], chave: chaveEndereco(endereco)
+        }));
+      }
+      stops = agruparPorEndereco(stops.flatMap(s => {
+        if (s.pacotes && s.pacotes.length) {
+          return s.pacotes.map(p => ({ ...s, pacote: p }));
+        }
+        return [{ ...s, pacote: null }];
+      }));
       statusEl.className = "";
       statusEl.textContent = "";
       btnMaps.disabled = true;
       if (!key) { statusEl.className = "err"; statusEl.textContent = "Cola a chave da API."; return; }
-      if (!stops.length) { statusEl.className = "err"; statusEl.textContent = "Cola pelo menos um endereço."; return; }
+      if (!stops.length) { statusEl.className = "err"; statusEl.textContent = "Importa o romaneio ou cola endereços."; return; }
       localStorage.setItem(KEY, key);
 
-      const origem = origemEl.value.trim() || stops[0];
+      const origem = origemEl.value.trim() || stops[0].endereco;
       const grupos = chunk(stops, 10);
-      statusEl.textContent = "Otimizando...";
+      statusEl.textContent = "Otimizando " + stops.length + " paradas...";
       try {
         const ordered = [];
         let start = origem;
         for (const grupo of grupos) {
           const parte = await computeChunk(key, start, grupo);
           ordered.push(...parte);
-          start = parte[parte.length - 1];
+          start = parte[parte.length - 1].endereco;
         }
-        lastOrdered = [origem, ...ordered.filter((v, i, a) => a.indexOf(v) === i)];
+        const vistos = {};
+        lastOrdered = ordered.filter(s => {
+          if (vistos[s.chave] || vistos["p" + s.parada]) return false;
+          vistos[s.chave] = true;
+          if (s.parada != null) vistos["p" + s.parada] = true;
+          return true;
+        });
+        trecho = 0;
         mostrarOrdem(lastOrdered);
         salvarCampos();
         statusEl.className = "ok";
-        statusEl.textContent = "Pronto. " + grupos.length + " requisição(ões) usadas nesta rota. A lista fica salva neste celular.";
+        statusEl.textContent = lastOrdered.length + " paradas. Pacotes do mesmo endereço foram juntados. Número laranja = parada do romaneio no carro.";
       } catch (e) {
         statusEl.className = "err";
         statusEl.textContent = "Erro da API:\n" + e.message;
@@ -211,20 +350,130 @@
     };
 
     btnMaps.onclick = () => {
-      if (!lastOrdered.length) return;
-      window.open(mapsUrl(lastOrdered.slice(0, 10)), "_blank");
+      const bloco = faixaTrecho();
+      if (!bloco.length) return;
+      window.open(mapsUrl(bloco), "_blank");
+    };
+    btnProx.onclick = () => { trecho += 1; atualizarTrecho(); };
+    btnAnt.onclick = () => { trecho -= 1; atualizarTrecho(); };
+
+    function lerPlanilha(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = e => {
+          try {
+            const data = new Uint8Array(e.target.result);
+            const wb = XLSX.read(data, { type: "array" });
+            const sheet = wb.Sheets[wb.SheetNames[0]];
+            const rows = XLSX.utils.sheet_to_json(sheet, { defval: "", raw: false });
+            resolve(rows);
+          } catch (err) { reject(err); }
+        };
+        reader.onerror = () => reject(new Error("Não deu pra ler o arquivo."));
+        reader.readAsArrayBuffer(file);
+      });
+    }
+
+    function linhaDoRomaneio(row, keys) {
+      const colParada = acharCol(keys, ["stop", "parada", "sequence", "seq", "sequencia", "ordem"]);
+      const colPkg = acharCol(keys, ["spx tn", "tn", "rastreio", "tracking", "pacote", "codigo", "id do pacote", "awb"]);
+      const colEnd = acharCol(keys, ["destination address", "endereco completo", "endereco", "address"]);
+      const colLat = acharCol(keys, ["latitude"]);
+      const colLng = acharCol(keys, ["longitude"]);
+      const colRua = acharCol(keys, ["logradouro", "rua"]);
+      const colNum = acharCol(keys, ["numero", "nº", "num"]);
+      const colComp = acharCol(keys, ["complemento", "compl"]);
+      const colBairro = acharCol(keys, ["bairro"]);
+      const colCidade = acharCol(keys, ["cidade", "municipio"]);
+      const colUf = acharCol(keys, ["uf", "estado"]);
+      const colCep = acharCol(keys, ["zipcode/postal code", "zipcode", "postal", "cep"]);
+
+      const partes = [];
+      if (colEnd && String(row[colEnd]).trim()) {
+        partes.push(String(row[colEnd]).trim());
+      } else {
+        const rua = colRua ? String(row[colRua] || "").trim() : "";
+        const num = colNum ? String(row[colNum] || "").trim() : "";
+        if (rua) partes.push(num ? rua + ", " + num : rua);
+      }
+      if (colComp && row[colComp]) partes.push(String(row[colComp]).trim());
+      if (colBairro && row[colBairro]) partes.push(String(row[colBairro]).trim());
+      if (colCidade && row[colCidade]) partes.push(String(row[colCidade]).trim());
+      if (colUf && row[colUf]) partes.push(String(row[colUf]).trim());
+      if (colCep && row[colCep]) partes.push(String(row[colCep]).trim());
+
+      const endereco = partes.filter(Boolean).join(", ");
+      if (!endereco) return null;
+      const paradaRaw = colParada ? String(row[colParada]).replace(/[^\d]/g, "") : "";
+      const lat = colLat ? Number(String(row[colLat]).replace(",", ".")) : null;
+      const lng = colLng ? Number(String(row[colLng]).replace(",", ".")) : null;
+      let chave = "";
+      if (lat && lng && !isNaN(lat) && !isNaN(lng)) {
+        chave = lat.toFixed(5) + "," + lng.toFixed(5);
+      } else {
+        chave = chaveEndereco(endereco.replace(/\b(apto|ap|bl|bloco|casa|fund|apartamento)\b.*/i, ""));
+      }
+      return {
+        parada: paradaRaw ? Number(paradaRaw) : null,
+        pacote: colPkg ? String(row[colPkg]).trim() : "",
+        endereco,
+        lat: lat && !isNaN(lat) ? lat : null,
+        lng: lng && !isNaN(lng) ? lng : null,
+        chave
+      };
+    }
+
+    document.getElementById("btnExcel").onclick = () => {
+      document.getElementById("arquivoExcel").click();
+    };
+
+    document.getElementById("arquivoExcel").onchange = async (ev) => {
+      const file = ev.target.files && ev.target.files[0];
+      ev.target.value = "";
+      if (!file) return;
+      if (file.name.startsWith("~$")) {
+        statusEl.className = "err";
+        statusEl.textContent = "Esse arquivo ~$ é temporário. Fecha o Excel e envia o .xlsx normal do romaneio.";
+        return;
+      }
+      statusEl.textContent = "Lendo romaneio...";
+      try {
+        const rows = await lerPlanilha(file);
+        if (!rows.length) throw new Error("Planilha vazia.");
+        const keys = Object.keys(rows[0]);
+        const linhas = [];
+        for (const row of rows) {
+          const l = linhaDoRomaneio(row, keys);
+          if (l) linhas.push(l);
+        }
+        if (!linhas.length) throw new Error("Não achei endereço. Colunas esperadas: Parada, Endereço/Rua, Número, Bairro, Cidade.");
+        stops = agruparPorEndereco(linhas);
+        listaEl.value = stops.map(s => s.endereco).join("\n");
+        lastOrdered = [];
+        mostrarOrdem(stops);
+        salvarCampos();
+        const pkgs = linhas.length;
+        statusEl.className = "ok";
+        statusEl.textContent = pkgs + " pacotes em " + stops.length + " paradas (mesmo endereço = 1 parada). Toca em Otimizar rota.";
+      } catch (e) {
+        statusEl.className = "err";
+        statusEl.textContent = "Erro ao ler Excel:\n" + e.message;
+      }
     };
 
     document.getElementById("btnLimpar").onclick = () => {
       if (!confirm("Apagar endereços e rota salvos neste celular?")) return;
       listaEl.value = "";
       origemEl.value = "";
+      stops = [];
       lastOrdered = [];
+      trecho = 0;
       localStorage.removeItem(KEY_LISTA);
+      localStorage.removeItem(KEY_TRECHO);
       localStorage.removeItem(KEY_ORIGEM);
+      localStorage.removeItem(KEY_STOPS);
       localStorage.removeItem(KEY_ORDEM);
       mostrarOrdem([]);
-      statusEl.className = "";
       statusEl.textContent = "Rota apagada. A chave da API continua salva.";
     };
   </script>
