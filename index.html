@@ -236,15 +236,25 @@
       return out;
     }
 
+    function pontoMaps(s) {
+      if (s && s.lat && s.lng) return Number(s.lat).toFixed(6) + "," + Number(s.lng).toFixed(6);
+      return String(s && s.endereco ? s.endereco : s || "").trim();
+    }
+
     function mapsUrl(items) {
-      const pts = items.map(s => encodeURIComponent(s.endereco || s));
-      if (pts.length === 1) return `https://www.google.com/maps/dir/?api=1&destination=${pts[0]}`;
-      const origin = encodeURIComponent(origemEl.value.trim() || pts[0]);
+      const origemTxt = origemEl.value.trim();
+      const pts = items.map(pontoMaps);
+      if (!pts.length) return "https://www.google.com/maps";
+      if (pts.length === 1) {
+        return "https://www.google.com/maps/dir/?api=1&destination=" + encodeURIComponent(pts[0]) + "&travelmode=driving";
+      }
+      const origin = origemTxt || pts[0];
       const dest = pts[pts.length - 1];
-      const wps = pts.slice(origemEl.value.trim() ? 0 : 1, -1).join("|");
-      let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${dest}`;
-      if (wps) url += `&waypoints=${wps}`;
-      url += `&travelmode=driving`;
+      const meio = origemTxt ? pts.slice(0, -1) : pts.slice(1, -1);
+      let url = "https://www.google.com/maps/dir/?api=1&origin=" + encodeURIComponent(origin) +
+        "&destination=" + encodeURIComponent(dest);
+      if (meio.length) url += "&waypoints=" + meio.map(encodeURIComponent).join("%7C");
+      url += "&travelmode=driving";
       return url;
     }
 
@@ -290,7 +300,9 @@
             parada: l.parada,
             endereco: l.endereco,
             pacotes: [],
-            chave: l.chave || k
+            chave: l.chave || k,
+            lat: l.lat || null,
+            lng: l.lng || null
           };
           ordem.push(k);
         }
