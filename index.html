@@ -79,6 +79,13 @@
     small { color: var(--muted); }
     .stop.atual { outline: 2px solid var(--accent); }
     .trecho { font-weight: 700; margin: 8px 0; }
+    .mini {
+      width: auto;
+      margin-top: 8px;
+      padding: 8px 10px;
+      font-size: 0.85rem;
+      background: #243044;
+    }
   </style>
 </head>
 <body>
@@ -190,11 +197,33 @@
           '<div class="stop-top"><div class="badge">' + parada + '</div><div>' +
           "<h3>" + (i + 1) + "º no trajeto · " + (s.endereco || "") + "</h3>" +
           '<div class="pkgs">' + (pkgs.length ? pkgs.length + " pacote(s): " + pkgs.join(" · ") : "Parada") + "</div>" +
+          '<button type="button" class="mini btnFeito">Já entreguei</button>' +
           "</div></div>";
+        li.querySelector(".btnFeito").onclick = () => marcarEntregue(i);
         ordemEl.appendChild(li);
       });
       resultadoEl.hidden = lista.length === 0;
       atualizarTrecho();
+    }
+
+    function mesmaParada(a, b) {
+      if (a.parada != null && b.parada != null) return Number(a.parada) === Number(b.parada);
+      return (a.chave && a.chave === b.chave) || a.endereco === b.endereco;
+    }
+
+    function marcarEntregue(i) {
+      const item = lastOrdered[i];
+      if (!item) return;
+      lastOrdered.splice(i, 1);
+      stops = stops.filter(s => !mesmaParada(s, item));
+      listaEl.value = (lastOrdered.length ? lastOrdered : stops).map(s => s.endereco).join("\n");
+      if (trecho * TAM >= lastOrdered.length) trecho = Math.max(0, totalTrechos() - 1);
+      mostrarOrdem(lastOrdered);
+      salvarCampos();
+      statusEl.className = "ok";
+      statusEl.textContent = lastOrdered.length
+        ? ("Parada tirada. Restam " + lastOrdered.length + ".")
+        : "Todas as paradas foram marcadas. Pode limpar pra amanhã.";
     }
 
     function salvarCampos() {
