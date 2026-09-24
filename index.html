@@ -89,6 +89,18 @@
       color: #ffffff;
       border: 1px solid #c5d4e4;
     }
+    .aqui {
+      text-align: center;
+      background: #24160f;
+      border: 2px solid var(--accent);
+    }
+    .aqui .num {
+      font-size: 4rem;
+      font-weight: 900;
+      line-height: 1;
+      color: #fff;
+    }
+    .stop.perto { outline: 3px solid var(--ok); }
   </style>
 </head>
 <body>
@@ -108,8 +120,15 @@
     <button class="sec" id="btnMaps" disabled>Abrir este trecho no Maps</button>
     <button class="sec" id="btnProx" disabled>Próximo trecho</button>
     <button class="sec" id="btnAnt" disabled>Trecho anterior</button>
+    <button class="sec" type="button" id="btnGps">Mostrar parada onde eu estou</button>
     <button class="sec" id="btnLimpar">Limpar rota</button>
     <p id="status"></p>
+  </div>
+
+  <div class="card aqui" id="cardAqui" hidden>
+    <div>Parada do carro agora</div>
+    <div class="num" id="numAqui">—</div>
+    <p id="txtAqui">Ativa o GPS pra o app mostrar o número quando você chegar.</p>
   </div>
 
   <div class="card" id="resultado" hidden>
@@ -276,8 +295,10 @@
     function pontoMaps(s) {
       const lat = coordNum(s && s.lat);
       const lng = coordNum(s && s.lng);
-      if (lat != null && lng != null) return lat + ", " + lng;
-      return String(s && s.endereco ? s.endereco : s || "").trim();
+      const n = s && s.parada != null ? ("P" + s.parada) : "";
+      if (lat != null && lng != null) return n ? (n + " " + lat + ", " + lng) : (lat + ", " + lng);
+      const end = String(s && s.endereco ? s.endereco : s || "").trim();
+      return n ? (n + " " + end) : end;
     }
 
     function mapsUrl(items) {
@@ -407,6 +428,71 @@
     };
     btnProx.onclick = () => { trecho += 1; atualizarTrecho(); };
     btnAnt.onclick = () => { trecho -= 1; atualizarTrecho(); };
+
+    let watchId = null;
+    const cardAqui = document.getElementById("cardAqui");
+    const numAqui = document.getElementById("numAqui");
+    const txtAqui = document.getElementById("txtAqui");
+
+    function metros(aLat, aLng, bLat, bLng) {
+      const R = 6371000;
+      const dLat = (bLat - aLat) * Math.PI / 180;
+      const dLng = (bLng - aLng) * Math.PI / 180;
+      const x = Math.sin(dLat / 2) ** 2 + Math.cos(aLat * Math.PI / 180) * Math.cos(bLat * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+      return 2 * R * Math.asin(Math.min(1, Math.sqrt(x)));
+    }
+
+    function atualizarAqui(lat, lng) {
+      const lista = lastOrdered.length ? lastOrdered : stops;
+      let melhor = null;
+      let dist = Infinity;
+      lista.forEach((s, i) => {
+        const slat = coordNum(s.lat);
+        const slng = coordNum(s.lng);
+        if (slat == null || slng == null) return;
+        const d = metros(lat, lng, slat, slng);
+        if (d < dist) { dist = d; melhor = { s, i, d }; }
+      });
+      [...ordemEl.querySelectorAll(".stop")].forEach(el => el.classList.remove("perto"));
+      cardAqui.hidden = false;
+      if (!melhor) {
+        numAqui.textContent = "—";
+        txtAqui.textContent = "Sem GPS nas paradas. Importa o romaneio de novo.";
+        return;
+      }
+      const n = melhor.s.parada != null ? melhor.s.parada : (melhor.i + 1);
+      numAqui.textContent = n;
+      const m = Math.round(melhor.d);
+      if (m <= 80) {
+        txtAqui.textContent = "Você chegou. Pacotes da parada " + n + " no carro. " + m + " m.";
+      } else {
+        txtAqui.textContent = "Parada mais perto: " + n + " · " + m + " m.";
+      }
+      const el = ordemEl.querySelectorAll(".stop")[melhor.i];
+      if (el) {
+        el.classList.add("perto");
+        el.scrollIntoView({ block: "nearest" });
+      }
+    }
+
+    document.getElementById("btnGps").onclick = () => {
+      if (!navigator.geolocation) {
+        statusEl.className = "err";
+        statusEl.textContent = "Este celular não tem GPS no navegador.";
+        return;
+      }
+      cardAqui.hidden = false;
+      txtAqui.textContent = "Pedindo GPS... aceita a permissão.";
+      if (watchId != null) navigator.geolocation.clearWatch(watchId);
+      watchId = navigator.geolocation.watchPosition(
+        pos => atualizarAqui(pos.coords.latitude, pos.coords.longitude),
+        err => {
+          statusEl.className = "err";
+          statusEl.textContent = "GPS: " + err.message + ". No Chrome, permite localização neste site.";
+        },
+        { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 }
+      );
+    };
 
     function lerPlanilha(file) {
       return new Promise((resolve, reject) => {
