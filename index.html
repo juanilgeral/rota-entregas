@@ -101,6 +101,10 @@
       color: #fff;
     }
     .stop.perto { outline: 3px solid var(--ok); }
+    .pkg-line { display: flex; align-items: center; gap: 8px; margin: 6px 0; color: #e8eef5; font-size: 0.88rem; }
+    .pkg-line input { width: auto; accent-color: #2ecc71; }
+    .pkg-line.ok { color: #7d8b9c; text-decoration: line-through; }
+    .stop.concluida { opacity: 0.55; }
   </style>
 </head>
 <body>
@@ -185,21 +189,27 @@
       return Math.max(1, Math.ceil((lastOrdered.length || 0) / TAM));
     }
 
+    function abertas() {
+      return lastOrdered.filter(pendentes);
+    }
+
     function faixaTrecho() {
+      const lista = abertas();
       const ini = trecho * TAM;
-      return lastOrdered.slice(ini, ini + TAM);
+      return lista.slice(ini, ini + TAM);
     }
 
     function atualizarTrecho() {
-      const tot = totalTrechos();
+      const ab = abertas();
+      const tot = Math.max(1, Math.ceil(ab.length / TAM));
       if (trecho >= tot) trecho = tot - 1;
       if (trecho < 0) trecho = 0;
       const ini = trecho * TAM;
-      const fim = Math.min(ini + TAM, lastOrdered.length);
-      infoTrecho.textContent = lastOrdered.length
-        ? ("Trecho " + (trecho + 1) + " de " + tot + " · paradas " + (ini + 1) + " a " + fim + " no trajeto")
-        : "";
-      btnMaps.disabled = !lastOrdered.length;
+      const fim = Math.min(ini + TAM, ab.length);
+      infoTrecho.textContent = ab.length
+        ? ("Trecho " + (trecho + 1) + " de " + tot + " · " + ab.length + " paradas em aberto")
+        : "Nenhuma parada em aberto";
+      btnMaps.disabled = !ab.length;
       btnProx.disabled = trecho >= tot - 1;
       btnAnt.disabled = trecho <= 0;
       [...ordemEl.querySelectorAll(".stop")].forEach((el, i) => {
@@ -208,44 +218,70 @@
       localStorage.setItem(KEY_TRECHO, String(trecho));
     }
 
+    function normPkgs(s) {
+      s.pacotes = (s.pacotes || []).map(p => {
+        if (p && typeof p === "object") return { tn: p.tn || "", ok: !!p.ok };
+        return { tn: String(p || ""), ok: false };
+      }).filter(p => p.tn);
+      return s;
+    }
+
+    function pendentes(s) {
+      const pkgs = (s.pacotes || []);
+      if (!pkgs.length) return !s.ok;
+      return pkgs.some(p => !(p && p.ok));
+    }
+
     function mostrarOrdem(lista) {
       ordemEl.innerHTML = "";
       lista.forEach((s, i) => {
+        normPkgs(s);
         const li = document.createElement("li");
-        li.className = "stop";
+        li.className = "stop" + (pendentes(s) ? "" : " concluida");
         const parada = s.parada || (i + 1);
-        const pkgs = (s.pacotes || []).filter(Boolean);
-        li.innerHTML =
+        const pkgs = s.pacotes || [];
+        const rest = pkgs.filter(p => !p.ok).length;
+        let html =
           '<div class="stop-top"><div class="badge">' + parada + '</div><div>' +
-          "<h3>" + (i + 1) + "º no trajeto · " + (s.endereco || "") + "</h3>" +
-          '<div class="pkgs">' + (pkgs.length ? pkgs.length + " pacote(s): " + pkgs.join(" · ") : "Parada") + "</div>" +
-          '<button type="button" class="mini btnFeito">Já entreguei</button>' +
-          "</div></div>";
-        li.querySelector(".btnFeito").onclick = () => marcarEntregue(i);
+          "<h3>" + (i + 1) + "º no trajeto · " + (s.endereco || "") + "</h3>";
+        if (pkgs.length) {
+          html += '<div class="pkgs">' + rest + " de " + pkgs.length + " ainda na parada " + parada + "</div>";
+          pkgs.forEach((p, pi) => {
+            html += '<label class="pkg-line' + (p.ok ? " ok" : "") + '">' +
+              '<input type="checkbox" data-si="' + i + '" data-pi="' + pi + '"' + (p.ok ? " checked" : "") + ">" +
+              (p.tn || "pacote") + "</label>";
+          });
+        } else {
+          html += '<label class="pkg-line' + (s.ok ? " ok" : "") + '"><input type="checkbox" data-si="' + i + '" data-pi="-1"' + (s.ok ? " checked" : "") + "> Esta parada</label>";
+        }
+        html += "</div></div>";
+        li.innerHTML = html;
+        li.querySelectorAll("input[type=checkbox]").forEach(cb => {
+          cb.onchange = () => marcarPacote(Number(cb.dataset.si), Number(cb.dataset.pi), cb.checked);
+        });
         ordemEl.appendChild(li);
       });
       resultadoEl.hidden = lista.length === 0;
       atualizarTrecho();
     }
 
-    function mesmaParada(a, b) {
-      if (a.parada != null && b.parada != null) return Number(a.parada) === Number(b.parada);
-      return (a.chave && a.chave === b.chave) || a.endereco === b.endereco;
-    }
-
-    function marcarEntregue(i) {
-      const item = lastOrdered[i];
+    function marcarPacote(si, pi, ok) {
+      const item = lastOrdered[si];
       if (!item) return;
-      lastOrdered.splice(i, 1);
-      stops = stops.filter(s => !mesmaParada(s, item));
-      listaEl.value = (lastOrdered.length ? lastOrdered : stops).map(s => s.endereco).join("\n");
-      if (trecho * TAM >= lastOrdered.length) trecho = Math.max(0, totalTrechos() - 1);
+      if (pi < 0) item.ok = ok;
+      else if (item.pacotes && item.pacotes[pi]) item.pacotes[pi].ok = ok;
+      const irmao = stops.find(s => s.parada === item.parada && s.endereco === item.endereco) || stops.find(s => s.chave === item.chave);
+      if (irmao) {
+        if (pi < 0) irmao.ok = ok;
+        else if (irmao.pacotes && irmao.pacotes[pi]) irmao.pacotes[pi].ok = ok;
+      }
       mostrarOrdem(lastOrdered);
       salvarCampos();
+      const falta = (item.pacotes || []).filter(p => !p.ok).length;
       statusEl.className = "ok";
-      statusEl.textContent = lastOrdered.length
-        ? ("Parada tirada. Restam " + lastOrdered.length + ".")
-        : "Todas as paradas foram marcadas. Pode limpar pra amanhã.";
+      statusEl.textContent = falta
+        ? ("Parada " + (item.parada || "") + ": ainda faltam " + falta + " pacote(s).")
+        : ("Parada " + (item.parada || "") + " concluída. Sai do próximo Maps.");
     }
 
     function salvarCampos() {
@@ -295,10 +331,8 @@
     function pontoMaps(s) {
       const lat = coordNum(s && s.lat);
       const lng = coordNum(s && s.lng);
-      const n = s && s.parada != null ? ("P" + s.parada) : "";
-      if (lat != null && lng != null) return n ? (n + " " + lat + ", " + lng) : (lat + ", " + lng);
-      const end = String(s && s.endereco ? s.endereco : s || "").trim();
-      return n ? (n + " " + end) : end;
+      if (lat != null && lng != null) return lat + ", " + lng;
+      return String(s && s.endereco ? s.endereco : s || "").trim();
     }
 
     function mapsUrl(items) {
