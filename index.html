@@ -101,8 +101,16 @@
       color: #fff;
     }
     .stop.perto { outline: 3px solid var(--ok); }
-    .pkg-line { display: flex; align-items: center; gap: 8px; margin: 6px 0; color: #e8eef5; font-size: 0.88rem; }
-    .pkg-line input { width: auto; accent-color: #2ecc71; }
+    .pkg-line { display: flex; align-items: center; gap: 10px; margin: 8px 0; color: #e8eef5; font-size: 0.88rem; pointer-events: none; }
+    .pkg-line input {
+      pointer-events: auto;
+      width: 26px;
+      height: 26px;
+      min-width: 26px;
+      margin: 0;
+      accent-color: #2ecc71;
+      flex-shrink: 0;
+    }
     .pkg-line.ok { color: #7d8b9c; text-decoration: line-through; }
     .stop.concluida { opacity: 0.55; }
   </style>
@@ -247,12 +255,12 @@
         if (pkgs.length) {
           html += '<div class="pkgs">' + rest + " de " + pkgs.length + " ainda na parada " + parada + "</div>";
           pkgs.forEach((p, pi) => {
-            html += '<label class="pkg-line' + (p.ok ? " ok" : "") + '">' +
+            html += '<div class="pkg-line' + (p.ok ? " ok" : "") + '">' +
               '<input type="checkbox" data-si="' + i + '" data-pi="' + pi + '"' + (p.ok ? " checked" : "") + ">" +
-              (p.tn || "pacote") + "</label>";
+              "<span>" + (p.tn || "pacote") + "</span></div>";
           });
         } else {
-          html += '<label class="pkg-line' + (s.ok ? " ok" : "") + '"><input type="checkbox" data-si="' + i + '" data-pi="-1"' + (s.ok ? " checked" : "") + "> Esta parada</label>";
+          html += '<div class="pkg-line' + (s.ok ? " ok" : "") + '"><input type="checkbox" data-si="' + i + '" data-pi="-1"' + (s.ok ? " checked" : "") + "><span>Esta parada</span></div>";
         }
         html += "</div></div>";
         li.innerHTML = html;
@@ -447,6 +455,7 @@
         trecho = 0;
         mostrarOrdem(lastOrdered);
         salvarCampos();
+        ligarGps();
         statusEl.className = "ok";
         statusEl.textContent = lastOrdered.length + " paradas. Pacotes do mesmo endereço foram juntados. Número laranja = parada do romaneio no carro.";
       } catch (e) {
@@ -481,6 +490,7 @@
       let melhor = null;
       let dist = Infinity;
       lista.forEach((s, i) => {
+        if (!pendentes(s)) return;
         const slat = coordNum(s.lat);
         const slng = coordNum(s.lng);
         if (slat == null || slng == null) return;
@@ -509,24 +519,22 @@
       }
     }
 
-    document.getElementById("btnGps").onclick = () => {
-      if (!navigator.geolocation) {
-        statusEl.className = "err";
-        statusEl.textContent = "Este celular não tem GPS no navegador.";
-        return;
-      }
+    function ligarGps() {
+      if (!navigator.geolocation) return;
       cardAqui.hidden = false;
-      txtAqui.textContent = "Pedindo GPS... aceita a permissão.";
+      txtAqui.textContent = "Acompanhando GPS... aceita a permissão se o Chrome pedir.";
       if (watchId != null) navigator.geolocation.clearWatch(watchId);
       watchId = navigator.geolocation.watchPosition(
         pos => atualizarAqui(pos.coords.latitude, pos.coords.longitude),
         err => {
-          statusEl.className = "err";
-          statusEl.textContent = "GPS: " + err.message + ". No Chrome, permite localização neste site.";
+          txtAqui.textContent = "GPS: " + err.message + ". Permite localização neste site.";
         },
-        { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 }
+        { enableHighAccuracy: true, maximumAge: 3000, timeout: 20000 }
       );
-    };
+    }
+
+    document.getElementById("btnGps").onclick = ligarGps;
+    if (lastOrdered.length) ligarGps();
 
     function lerPlanilha(file) {
       return new Promise((resolve, reject) => {
@@ -623,6 +631,7 @@
         lastOrdered = [];
         mostrarOrdem(stops);
         salvarCampos();
+        ligarGps();
         const pkgs = linhas.length;
         statusEl.className = "ok";
         statusEl.textContent = pkgs + " pacotes em " + stops.length + " paradas (mesmo endereço = 1 parada). Toca em Otimizar rota.";
