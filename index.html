@@ -271,8 +271,13 @@
             html += '<div class="pkg-line">' + (p.tn || p) + "</div>";
           });
         }
+        html += '<button type="button" class="mini btnUma">Abrir esta no Maps</button>';
         html += "</div></div>";
         li.innerHTML = html;
+        li.querySelector(".btnUma").onclick = (ev) => {
+          ev.stopPropagation();
+          window.open(mapsUrl([s]), "_blank");
+        };
         ordemEl.appendChild(li);
       });
       resultadoEl.hidden = lista.length === 0;
