@@ -119,6 +119,8 @@
     }
     .pkg-line.ok { color: #7d8b9c; text-decoration: line-through; }
     .stop.concluida { opacity: 0.55; }
+    .stop.semnum { border: 1px dashed #f5c542; }
+    .stop.semnum .badge { background: #8a6d12; font-size: 0.75rem; }
   </style>
 </head>
 <body>
@@ -198,6 +200,17 @@
       return norm(end).replace(/[,.\-]/g, " ").replace(/\s+/g, " ");
     }
 
+    function semParada(s) {
+      return s.parada == null || s.parada === "" || isNaN(Number(s.parada));
+    }
+
+    function porUltimoSemNumero(lista) {
+      const com = [];
+      const sem = [];
+      lista.forEach(s => (semParada(s) ? sem : com).push(s));
+      return com.concat(sem);
+    }
+
     function totalTrechos() {
       return Math.max(1, Math.ceil((lastOrdered.length || 0) / TAM));
     }
@@ -244,12 +257,14 @@
       lista.forEach((s, i) => {
         normPkgs(s);
         const li = document.createElement("li");
-        li.className = "stop";
-        const parada = s.parada || (i + 1);
+        const sem = semParada(s);
+        li.className = "stop" + (sem ? " semnum" : "");
+        const parada = sem ? "S/N" : s.parada;
         const pkgs = s.pacotes || [];
         let html =
           '<div class="stop-top"><div class="badge">' + parada + '</div><div>' +
           "<h3>" + (i + 1) + "º no trajeto · " + (s.endereco || "") + "</h3>";
+        if (sem) html += '<div class="pkgs">Sem parada na etiqueta — deixar por último</div>';
         if (pkgs.length) {
           html += '<div class="pkgs">' + pkgs.length + " pacote(s)</div>";
           pkgs.forEach(p => {
@@ -406,9 +421,11 @@
       if (!stops.length) { statusEl.className = "err"; statusEl.textContent = "Importa o romaneio ou cola endereços."; return; }
       localStorage.setItem(KEY, key);
 
-      const origem = origemEl.value.trim() || stops[0].endereco;
-      const grupos = chunk(stops, 10);
-      statusEl.textContent = "Otimizando " + stops.length + " paradas...";
+      const avulsas = stops.filter(semParada);
+      const numeradas = stops.filter(s => !semParada(s));
+      const origem = origemEl.value.trim() || (numeradas[0] || stops[0]).endereco;
+      const grupos = chunk(numeradas.length ? numeradas : stops, 10);
+      statusEl.textContent = "Otimizando " + (numeradas.length || stops.length) + " paradas...";
       try {
         const ordered = [];
         let start = origem;
@@ -418,12 +435,12 @@
           start = parte[parte.length - 1].endereco;
         }
         const vistos = {};
-        lastOrdered = ordered.filter(s => {
-          if (vistos[s.chave] || vistos["p" + s.parada]) return false;
+        lastOrdered = porUltimoSemNumero(ordered.filter(s => {
+          if (vistos[s.chave] || (s.parada != null && vistos["p" + s.parada])) return false;
           vistos[s.chave] = true;
           if (s.parada != null) vistos["p" + s.parada] = true;
           return true;
-        });
+        }).concat(avulsas));
         trecho = 0;
         mostrarOrdem(lastOrdered);
         salvarCampos();
@@ -594,10 +611,10 @@
           if (l) linhas.push(l);
         }
         if (!linhas.length) throw new Error("Não achei endereço. Colunas esperadas: Parada, Endereço/Rua, Número, Bairro, Cidade.");
-        stops = agruparPorEndereco(linhas);
+        stops = porUltimoSemNumero(agruparPorEndereco(linhas));
         listaEl.value = stops.map(s => s.endereco).join("\n");
-        lastOrdered = [];
-        mostrarOrdem(stops);
+        lastOrdered = stops.slice();
+        mostrarOrdem(lastOrdered);
         salvarCampos();
         ligarGps();
         const pkgs = linhas.length;
