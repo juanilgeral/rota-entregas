@@ -106,6 +106,7 @@
       color: #fff;
     }
     .aqui p { margin: 4px 0 0; font-size: 0.8rem; }
+    .aqui { cursor: pointer; }
     .stop.perto { outline: 3px solid var(--ok); }
     .pkg-line { display: flex; align-items: center; gap: 10px; margin: 8px 0; color: #e8eef5; font-size: 0.88rem; pointer-events: none; }
     .pkg-line input {
@@ -467,9 +468,21 @@
     btnAnt.onclick = () => { trecho -= 1; atualizarTrecho(); };
 
     let watchId = null;
+    let idxAqui = -1;
     const cardAqui = document.getElementById("cardAqui");
     const numAqui = document.getElementById("numAqui");
     const txtAqui = document.getElementById("txtAqui");
+
+    function irParaParadaAtual() {
+      if (idxAqui < 0) return;
+      const el = ordemEl.querySelectorAll(".stop")[idxAqui];
+      if (!el) return;
+      const topo = cardAqui.getBoundingClientRect().height + 16;
+      const y = el.getBoundingClientRect().top + window.scrollY - topo;
+      window.scrollTo({ top: Math.max(0, y), behavior: "smooth" });
+    }
+
+    cardAqui.onclick = irParaParadaAtual;
 
     function metros(aLat, aLng, bLat, bLng) {
       const R = 6371000;
@@ -493,17 +506,19 @@
       [...ordemEl.querySelectorAll(".stop")].forEach(el => el.classList.remove("perto"));
       cardAqui.hidden = false;
       if (!melhor) {
+        idxAqui = -1;
         numAqui.textContent = "—";
         txtAqui.textContent = "Sem GPS nas paradas. Importa o romaneio de novo.";
         return;
       }
-      const n = melhor.s.parada != null ? melhor.s.parada : (melhor.i + 1);
+      idxAqui = melhor.i;
+      const n = semParada(melhor.s) ? "S/N" : melhor.s.parada;
       numAqui.textContent = n;
       const m = Math.round(melhor.d);
       if (m <= 80) {
-        txtAqui.textContent = "Você chegou. Pacotes da parada " + n + " no carro. " + m + " m.";
+        txtAqui.textContent = "Você chegou. Toque aqui pra ver a parada " + n + " na lista. " + m + " m.";
       } else {
-        txtAqui.textContent = "Parada mais perto: " + n + " · " + m + " m.";
+        txtAqui.textContent = "Mais perto: " + n + " · " + m + " m. Toque aqui pra ir até o quadro.";
       }
       const el = ordemEl.querySelectorAll(".stop")[melhor.i];
       if (el) el.classList.add("perto");
