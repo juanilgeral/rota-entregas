@@ -202,27 +202,21 @@
       return Math.max(1, Math.ceil((lastOrdered.length || 0) / TAM));
     }
 
-    function abertas() {
-      return lastOrdered.filter(pendentes);
-    }
-
     function faixaTrecho() {
-      const lista = abertas();
       const ini = trecho * TAM;
-      return lista.slice(ini, ini + TAM);
+      return lastOrdered.slice(ini, ini + TAM);
     }
 
     function atualizarTrecho() {
-      const ab = abertas();
-      const tot = Math.max(1, Math.ceil(ab.length / TAM));
+      const tot = totalTrechos();
       if (trecho >= tot) trecho = tot - 1;
       if (trecho < 0) trecho = 0;
       const ini = trecho * TAM;
-      const fim = Math.min(ini + TAM, ab.length);
-      infoTrecho.textContent = ab.length
-        ? ("Trecho " + (trecho + 1) + " de " + tot + " · " + ab.length + " paradas em aberto")
-        : "Nenhuma parada em aberto";
-      btnMaps.disabled = !ab.length;
+      const fim = Math.min(ini + TAM, lastOrdered.length);
+      infoTrecho.textContent = lastOrdered.length
+        ? ("Trecho " + (trecho + 1) + " de " + tot + " · paradas " + (ini + 1) + " a " + fim)
+        : "";
+      btnMaps.disabled = !lastOrdered.length;
       btnProx.disabled = trecho >= tot - 1;
       btnAnt.disabled = trecho <= 0;
       [...ordemEl.querySelectorAll(".stop")].forEach((el, i) => {
@@ -250,51 +244,24 @@
       lista.forEach((s, i) => {
         normPkgs(s);
         const li = document.createElement("li");
-        li.className = "stop" + (pendentes(s) ? "" : " concluida");
+        li.className = "stop";
         const parada = s.parada || (i + 1);
         const pkgs = s.pacotes || [];
-        const rest = pkgs.filter(p => !p.ok).length;
         let html =
           '<div class="stop-top"><div class="badge">' + parada + '</div><div>' +
           "<h3>" + (i + 1) + "º no trajeto · " + (s.endereco || "") + "</h3>";
         if (pkgs.length) {
-          html += '<div class="pkgs">' + rest + " de " + pkgs.length + " ainda na parada " + parada + "</div>";
-          pkgs.forEach((p, pi) => {
-            html += '<div class="pkg-line' + (p.ok ? " ok" : "") + '">' +
-              '<input type="checkbox" data-si="' + i + '" data-pi="' + pi + '"' + (p.ok ? " checked" : "") + ">" +
-              "<span>" + (p.tn || "pacote") + "</span></div>";
+          html += '<div class="pkgs">' + pkgs.length + " pacote(s)</div>";
+          pkgs.forEach(p => {
+            html += '<div class="pkg-line">' + (p.tn || p) + "</div>";
           });
-        } else {
-          html += '<div class="pkg-line' + (s.ok ? " ok" : "") + '"><input type="checkbox" data-si="' + i + '" data-pi="-1"' + (s.ok ? " checked" : "") + "><span>Esta parada</span></div>";
         }
         html += "</div></div>";
         li.innerHTML = html;
-        li.querySelectorAll("input[type=checkbox]").forEach(cb => {
-          cb.onchange = () => marcarPacote(Number(cb.dataset.si), Number(cb.dataset.pi), cb.checked);
-        });
         ordemEl.appendChild(li);
       });
       resultadoEl.hidden = lista.length === 0;
       atualizarTrecho();
-    }
-
-    function marcarPacote(si, pi, ok) {
-      const item = lastOrdered[si];
-      if (!item) return;
-      if (pi < 0) item.ok = ok;
-      else if (item.pacotes && item.pacotes[pi]) item.pacotes[pi].ok = ok;
-      const irmao = stops.find(s => s.parada === item.parada && s.endereco === item.endereco) || stops.find(s => s.chave === item.chave);
-      if (irmao) {
-        if (pi < 0) irmao.ok = ok;
-        else if (irmao.pacotes && irmao.pacotes[pi]) irmao.pacotes[pi].ok = ok;
-      }
-      mostrarOrdem(lastOrdered);
-      salvarCampos();
-      const falta = (item.pacotes || []).filter(p => !p.ok).length;
-      statusEl.className = "ok";
-      statusEl.textContent = falta
-        ? ("Parada " + (item.parada || "") + ": ainda faltam " + falta + " pacote(s).")
-        : ("Parada " + (item.parada || "") + " concluída. Sai do próximo Maps.");
     }
 
     function salvarCampos() {
@@ -495,7 +462,6 @@
       let melhor = null;
       let dist = Infinity;
       lista.forEach((s, i) => {
-        if (!pendentes(s)) return;
         const slat = coordNum(s.lat);
         const slng = coordNum(s.lng);
         if (slat == null || slng == null) return;
@@ -518,10 +484,7 @@
         txtAqui.textContent = "Parada mais perto: " + n + " · " + m + " m.";
       }
       const el = ordemEl.querySelectorAll(".stop")[melhor.i];
-      if (el) {
-        el.classList.add("perto");
-        el.scrollIntoView({ block: "nearest" });
-      }
+      if (el) el.classList.add("perto");
     }
 
     function ligarGps() {
