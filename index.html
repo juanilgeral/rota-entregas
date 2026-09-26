@@ -107,6 +107,16 @@
     }
     .aqui p { margin: 4px 0 0; font-size: 0.8rem; }
     .aqui { cursor: pointer; }
+    .busca {
+      margin-top: 8px;
+      pointer-events: auto;
+    }
+    .busca input {
+      text-align: left;
+      font-size: 15px;
+      padding: 8px;
+    }
+    .pkg-line.achou { color: #fff; background: #3a2a12; border-radius: 6px; padding: 4px 6px; }
     .stop.perto { outline: 3px solid var(--ok); }
     .pkg-line { display: flex; align-items: center; gap: 10px; margin: 8px 0; color: #e8eef5; font-size: 0.88rem; pointer-events: none; }
     .pkg-line input {
@@ -126,10 +136,13 @@
 </head>
 <body>
   <h1>Rota de Entregas</h1>
-  <div class="card aqui" id="cardAqui" hidden>
+  <div class="card aqui" id="cardAqui">
     <div>Parada do carro agora</div>
     <div class="num" id="numAqui">—</div>
-    <p id="txtAqui">Ativa o GPS pra o app mostrar o número quando você chegar.</p>
+    <p id="txtAqui">Toque no número pra ir ao quadro da parada.</p>
+    <div class="busca">
+      <input id="buscaTn" type="search" inputmode="text" placeholder="Buscar SPX TN (ex.: BR2676...)" />
+    </div>
   </div>
   <p>Importa o romaneio da Shopee. O app junta pacotes do mesmo endereço, mostra a parada do carro e monta o trajeto sem voltar na mesma rua.</p>
 
@@ -482,7 +495,43 @@
       window.scrollTo({ top: Math.max(0, y), behavior: "smooth" });
     }
 
-    cardAqui.onclick = irParaParadaAtual;
+    cardAqui.onclick = (ev) => {
+      if (ev.target && ev.target.id === "buscaTn") return;
+      irParaParadaAtual();
+    };
+
+    function buscarTn() {
+      const q = norm(document.getElementById("buscaTn").value).replace(/\s/g, "");
+      [...ordemEl.querySelectorAll(".pkg-line")].forEach(el => el.classList.remove("achou"));
+      if (q.length < 4) return;
+      const lista = lastOrdered.length ? lastOrdered : stops;
+      let idx = -1;
+      lista.forEach((s, i) => {
+        (s.pacotes || []).forEach(p => {
+          const tn = norm((p && p.tn) || p || "").replace(/\s/g, "");
+          if (tn.includes(q) || q.includes(tn)) idx = i;
+        });
+      });
+      if (idx < 0) {
+        txtAqui.textContent = "SPX TN não encontrado.";
+        return;
+      }
+      idxAqui = idx;
+      const s = lista[idx];
+      numAqui.textContent = semParada(s) ? "S/N" : s.parada;
+      txtAqui.textContent = "Achei na parada " + numAqui.textContent + ". Toque no número pra ir ao quadro.";
+      const stopEl = ordemEl.querySelectorAll(".stop")[idx];
+      if (stopEl) {
+        stopEl.querySelectorAll(".pkg-line").forEach(el => {
+          if (norm(el.textContent).replace(/\s/g, "").includes(q)) el.classList.add("achou");
+        });
+        irParaParadaAtual();
+      }
+    }
+
+    document.getElementById("buscaTn").addEventListener("click", ev => ev.stopPropagation());
+    document.getElementById("buscaTn").addEventListener("keydown", ev => ev.stopPropagation());
+    document.getElementById("buscaTn").addEventListener("input", buscarTn);
 
     function metros(aLat, aLng, bLat, bLng) {
       const R = 6371000;
