@@ -141,7 +141,7 @@
     <div class="num" id="numAqui">—</div>
     <p id="txtAqui">Toque no número pra ir ao quadro da parada.</p>
     <div class="busca">
-      <input id="buscaTn" type="search" inputmode="text" placeholder="Buscar SPX TN (ex.: BR2676...)" />
+      <input id="buscaTn" type="search" inputmode="text" placeholder="3 finais do BR já servem (ex.: 4048)" />
     </div>
   </div>
   <p>Importa o romaneio da Shopee. O app junta pacotes do mesmo endereço, mostra a parada do carro e monta o trajeto sem voltar na mesma rua.</p>
@@ -503,13 +503,13 @@
     function buscarTn() {
       const q = norm(document.getElementById("buscaTn").value).replace(/\s/g, "");
       [...ordemEl.querySelectorAll(".pkg-line")].forEach(el => el.classList.remove("achou"));
-      if (q.length < 4) return;
+      if (q.length < 3) return;
       const lista = lastOrdered.length ? lastOrdered : stops;
       let idx = -1;
       lista.forEach((s, i) => {
         (s.pacotes || []).forEach(p => {
           const tn = norm((p && p.tn) || p || "").replace(/\s/g, "");
-          if (tn.includes(q) || q.includes(tn)) idx = i;
+          if (tn.endsWith(q) || tn.includes(q)) idx = i;
         });
       });
       if (idx < 0) {
