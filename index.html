@@ -196,6 +196,8 @@
     <input id="precoLitro" type="number" step="0.01" value="6.55" />
     <label>Consumo estimado (km/l)</label>
     <input id="consumoKmL" type="number" step="0.1" value="11.5" />
+    <label>Distância real da rota (km) — deixe vazio para usar a da API</label>
+    <input id="kmManual" type="number" step="0.1" placeholder="ex.: 45" />
     <label>Valor por entrega concluída (R$)</label>
     <input id="valorEntrega" type="number" step="0.01" value="2.00" />
     <div id="resumoCustos" style="margin-top:12px;"></div>
@@ -851,12 +853,22 @@
     function calcularCustos(metros, numConcluidas) {
       const card = document.getElementById("cardCustos");
       const resumo = document.getElementById("resumoCustos");
-      if (!metros || metros <= 0) {
+      const totalParadas = lastOrdered.length || 1;
+      let km = metros / 1000;
+      const kmManualEl = document.getElementById("kmManual");
+      const kmManual = parseFloat(kmManualEl && kmManualEl.value);
+      if (!isNaN(kmManual) && kmManual > 0) {
+        km = kmManual;
+      }
+      if (!km || km <= 0) {
         card.hidden = true;
         return;
       }
-      const totalParadas = lastOrdered.length;
-      const km = metros / 1000;
+      // aviso se a distância da API parecer absurda
+      const mediaPorParada = km / Math.max(1, totalParadas);
+      const aviso = (mediaPorParada > 15 || mediaPorParada < 0.2)
+        ? '<p style="color:#ff6b6b;margin:6px 0;font-size:0.85rem;">Atenção: a distância da API parece fora do normal (' + mediaPorParada.toFixed(1) + ' km/parada). Digite a distância real no campo acima.</p>'
+        : '';
       const tipo = document.getElementById("combustivel").value;
       const preco = parseFloat(document.getElementById("precoLitro").value) || (tipo === "etanol" ? 4.40 : 6.55);
       const consumo = parseFloat(document.getElementById("consumoKmL").value) || (tipo === "etanol" ? 8.0 : 11.5);
@@ -874,7 +886,8 @@
         '<div class="linha-custo verde"><span>Receita (' + numConcluidas + ' de ' + totalParadas + ' concluídas)</span><strong>' + formatBRL(receita) + '</strong></div>' +
         '<div class="linha-custo destaque"><span>Guardar para o carro</span><strong>' + formatBRL(custoComb) + '</strong></div>' +
         '<div class="linha-custo"><span>Sobra estimada (só concluídas)</span><strong>' + formatBRL(Math.max(0, liquido)) + '</strong></div>' +
-        '<p style="margin:10px 0 0;font-size:0.82rem;color:var(--muted);">Marque as entregas concluídas nos checkboxes. O valor a guardar é o custo do combustível da rota inteira. Ajuste preço e consumo conforme seu uso real.</p>';
+        aviso +
+        '<p style="margin:10px 0 0;font-size:0.82rem;color:var(--muted);">Marque as entregas concluídas nos checkboxes. O valor a guardar é o custo do combustível da rota inteira. Se o km da API estiver errado, digite a distância real acima.</p>';
 
       card.hidden = false;
     }
@@ -894,7 +907,7 @@
     });
 
     // Recalcula se o usuário editar os campos (se já tiver rota)
-    ["precoLitro", "consumoKmL", "valorEntrega", "combustivel"].forEach(id => {
+    ["precoLitro", "consumoKmL", "valorEntrega", "combustivel", "kmManual"].forEach(id => {
       document.getElementById(id).addEventListener("input", () => {
         atualizarCustosSeExistir();
       });
@@ -906,7 +919,8 @@
         alert("Otimize uma rota primeiro.");
         return;
       }
-      const km = window._ultimaDistancia / 1000;
+      const kmManual = parseFloat(document.getElementById("kmManual").value);
+      const km = (!isNaN(kmManual) && kmManual > 0) ? kmManual : (window._ultimaDistancia / 1000);
       const tipo = document.getElementById("combustivel").value;
       const preco = parseFloat(document.getElementById("precoLitro").value) || (tipo === "etanol" ? 4.40 : 6.55);
       const consumo = parseFloat(document.getElementById("consumoKmL").value) || (tipo === "etanol" ? 8.0 : 11.5);
