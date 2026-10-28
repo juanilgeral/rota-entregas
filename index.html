@@ -821,10 +821,31 @@
           <div><span class="num">${h.km.toFixed(1)} km</span> · ${h.litros.toFixed(1)} L · ${formatBRL(h.custo)}</div>
           <div>${h.concluidas} de ${h.total} entregas · Receita ${formatBRL(h.receita)} · Sobra ${formatBRL(h.sobra)}</div>
           <div class="hist-btns">
+            <button class="sec" type="button" onclick="editarKmHistorico(${i})">Corrigir km</button>
             <button class="sec" type="button" onclick="apagarHistorico(${i})">Apagar</button>
           </div>
         </div>
       `).join("");
+    }
+
+
+    function editarKmHistorico(idx) {
+      const hist = carregarHistorico();
+      const item = hist[idx];
+      if (!item) return;
+      const novo = prompt("Corrigir distância real (km):", item.km.toFixed(1));
+      if (novo === null) return;
+      const km = parseFloat(String(novo).replace(",", "."));
+      if (isNaN(km) || km <= 0) { alert("Valor inválido."); return; }
+      const consumo = item.consumo || 11.5;
+      const preco = item.preco || 6.55;
+      const litros = km / consumo;
+      const custo = litros * preco;
+      const receita = item.concluidas * (item.valorEntrega || 2);
+      const sobra = Math.max(0, receita - custo);
+      hist[idx] = { ...item, km, litros, custo, sobra };
+      localStorage.setItem(KEY_HIST, JSON.stringify(hist));
+      renderHistorico();
     }
 
     function apagarHistorico(idx) {
@@ -866,9 +887,13 @@
       }
       // aviso se a distância da API parecer absurda
       const mediaPorParada = km / Math.max(1, totalParadas);
-      const aviso = (mediaPorParada > 15 || mediaPorParada < 0.2)
-        ? '<p style="color:#ff6b6b;margin:6px 0;font-size:0.85rem;">Atenção: a distância da API parece fora do normal (' + mediaPorParada.toFixed(1) + ' km/parada). Digite a distância real no campo acima.</p>'
-        : '';
+      let aviso = "";
+      if (mediaPorParada > 15 || mediaPorParada < 0.2) {
+        const estimativa = Math.round(totalParadas * 1.8); // ~1.8 km por parada (urbano realista)
+        aviso = '<p style="color:#ff6b6b;margin:6px 0;font-size:0.85rem;">Atenção: a distância da API parece fora do normal (' + mediaPorParada.toFixed(1) + ' km/parada). Estimativa sugerida: <b>' + estimativa + ' km</b>. Digite no campo acima.</p>';
+        // preenche sugestão se o campo manual estiver vazio
+        if (kmManualEl && !kmManualEl.value) kmManualEl.placeholder = "sugestão: " + estimativa;
+      }
       const tipo = document.getElementById("combustivel").value;
       const preco = parseFloat(document.getElementById("precoLitro").value) || (tipo === "etanol" ? 4.40 : 6.55);
       const consumo = parseFloat(document.getElementById("consumoKmL").value) || (tipo === "etanol" ? 8.0 : 11.5);
