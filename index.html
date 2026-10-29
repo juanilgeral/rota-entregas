@@ -119,6 +119,19 @@
     .pkg-line.achou { color: #fff; background: #3a2a12; border-radius: 6px; padding: 4px 6px; }
     .stop.perto { outline: 3px solid var(--ok); }
     .pkg-line { display: flex; align-items: center; gap: 10px; margin: 8px 0; color: #e8eef5; font-size: 0.88rem; pointer-events: none; }
+    .pkg-line .tn { font-weight: 600; }
+    .pkg-line.multi .tn { background: #2a3a1a; padding: 2px 6px; border-radius: 4px; }
+    .pkg-line.ok { color: #7d8b9c; text-decoration: line-through; }
+    .pkg-line.ok .tn { text-decoration: line-through; opacity: 0.7; }
+    /* Cores para grupos de mesmo endereço/cliente */
+    .tn.cor-0 { color: #4fc3f7; } /* cyan */
+    .tn.cor-1 { color: #ffb74d; } /* laranja */
+    .tn.cor-2 { color: #81c784; } /* verde */
+    .tn.cor-3 { color: #f48fb1; } /* rosa */
+    .tn.cor-4 { color: #ce93d8; } /* roxo */
+    .tn.cor-5 { color: #fff176; } /* amarelo */
+    .tn.cor-6 { color: #90caf9; } /* azul claro */
+    .tn.cor-7 { color: #a5d6a7; } /* verde claro */
     .pkg-line input {
       pointer-events: auto;
       width: 26px;
@@ -156,7 +169,7 @@
       <input id="buscaTn" type="search" inputmode="text" placeholder="3 finais do BR já servem (ex.: 4048)" />
     </div>
   </div>
-  <p>Importa o romaneio da Shopee. O app junta pacotes do mesmo endereço, mostra a parada do carro e monta o trajeto sem voltar na mesma rua.</p>
+  <p>Importa o romaneio da Shopee. O app junta pacotes do mesmo endereço, mostra a parada do carro e monta o trajeto sem voltar na mesma rua. <b>Seriais da mesma cor</b> = mesma entrega/endereço/cliente.</p>
 
   <div class="card">
     <label>Chave da API do Google (fica só neste celular)</label>
@@ -296,8 +309,8 @@
 
     function normPkgs(s) {
       s.pacotes = (s.pacotes || []).map(p => {
-        if (p && typeof p === "object") return { tn: p.tn || "", ok: !!p.ok };
-        return { tn: String(p || ""), ok: false };
+        if (p && typeof p === "object") return { tn: p.tn || "", ok: !!p.ok, chaveGrupo: p.chaveGrupo || "" };
+        return { tn: String(p || ""), ok: false, chaveGrupo: "" };
       }).filter(p => p.tn);
       return s;
     }
@@ -325,11 +338,34 @@
         if (concluida) li.classList.add("concluida");
         if (pkgs.length) {
           html += '<div class="pkgs">' + pkgs.length + " pacote(s)</div>";
+          // Agrupa por chaveGrupo para colorir iguais
+          const grupos = {};
+          pkgs.forEach((p, pi) => {
+            const g = p.chaveGrupo || "unico";
+            if (!grupos[g]) grupos[g] = [];
+            grupos[g].push({ p, pi });
+          });
+          const coresUsadas = {};
+          let corIdx = 0;
           pkgs.forEach((p, pi) => {
             const checked = p.ok ? "checked" : "";
             const okClass = p.ok ? " ok" : "";
-            html += '<div class="pkg-line' + okClass + '"><input type="checkbox" data-stop="' + i + '" data-pkg="' + pi + '" ' + checked + ' /> ' + (p.tn || p) + "</div>";
+            const g = p.chaveGrupo || "unico";
+            let corClass = "";
+            let multiClass = "";
+            if (grupos[g] && grupos[g].length > 1) {
+              if (coresUsadas[g] == null) {
+                coresUsadas[g] = corIdx % 8;
+                corIdx++;
+              }
+              corClass = " cor-" + coresUsadas[g];
+              multiClass = " multi";
+            }
+            html += '<div class="pkg-line' + okClass + multiClass + '"><input type="checkbox" data-stop="' + i + '" data-pkg="' + pi + '" ' + checked + ' /> <span class="tn' + corClass + '">' + (p.tn || p) + '</span></div>';
           });
+          if (Object.values(grupos).some(g => g.length > 1)) {
+            html += '<div class="pkgs" style="color:#f5c542;font-size:0.8rem;margin-top:4px;">Mesma cor = mesmo endereço/cliente</div>';
+          }
         } else {
           const checked = s.ok ? "checked" : "";
           html += '<div class="pkg-line"><input type="checkbox" data-stop="' + i + '" data-pkg="-1" ' + checked + ' /> Marcar entrega concluída</div>';
@@ -486,7 +522,13 @@
           };
           ordem.push(k);
         }
-        if (l.pacote) map[k].pacotes.push(l.pacote);
+        if (l.pacote) {
+          const pkg = typeof l.pacote === "object" ? l.pacote : { tn: String(l.pacote), ok: false };
+          // chaveGrupo mais fina: endereço normalizado sem complementos comuns
+          const endLimpo = (l.endereco || "").replace(/\b(apto|ap|bl|bloco|casa|fund|apartamento|cs|loja|frente|fundos)\b.*/i, "");
+          pkg.chaveGrupo = chaveEndereco(endLimpo) || l.chave || k;
+          map[k].pacotes.push(pkg);
+        }
         if (l.endereco && l.endereco.length > (map[k].endereco || "").length) map[k].endereco = l.endereco;
       }
       return ordem.map(k => map[k]);
