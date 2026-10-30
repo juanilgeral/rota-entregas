@@ -463,7 +463,10 @@
       }
       const idx = data.routes?.[0]?.optimizedIntermediateWaypointIndex;
       if (!idx || !idx.length) return group;
-      return idx.map(i => group[i]).concat(destination);
+      const ordered = idx
+        .map(i => group[i])
+        .filter(Boolean); // remove undefined se o índice vier inválido
+      return ordered.concat(destination);
     }
 
     function agruparPorEndereco(linhas) {
@@ -536,6 +539,8 @@
         }
         const vistos = {};
         lastOrdered = porUltimoSemNumero(ordered.filter(s => {
+          if (!s) return false;
+          if (!s.chave) s.chave = chaveEndereco(s.endereco || "");
           if (vistos[s.chave] || (s.parada != null && vistos["p" + s.parada])) return false;
           vistos[s.chave] = true;
           if (s.parada != null) vistos["p" + s.parada] = true;
@@ -797,7 +802,7 @@
               endereco: s.endereco,
               lat: s.lat,
               lng: s.lng,
-              chave: s.chave || chaveEndereco(s.endereco)
+              chave: (s && s.chave) || chaveEndereco((s && s.endereco) || "")
             });
           });
         } else {
