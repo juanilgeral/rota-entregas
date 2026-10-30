@@ -287,8 +287,8 @@
 
     function normPkgs(s) {
       s.pacotes = (s.pacotes || []).map(p => {
-        if (p && typeof p === "object") return { tn: p.tn || "", ok: !!p.ok };
-        return { tn: String(p || ""), ok: false };
+        if (p && typeof p === "object") return { tn: p.tn || "", ok: !!p.ok, paradaOrig: p.paradaOrig };
+        return { tn: String(p || ""), ok: false, paradaOrig: null };
       }).filter(p => p.tn);
       return s;
     }
@@ -324,10 +324,20 @@
         if (pkgs.length) {
           const pkgColor = multiPkg ? ' style="color:#7ee0a8;font-weight:700;"' : '';
           html += '<div class="pkgs"' + pkgColor + '>' + pkgs.length + " pacote(s)</div>";
+          // cores por parada original
+          const cores = ["#ee4d2d","#3498db","#9b59b6","#e67e22","#1abc9c","#f1c40f","#e74c3c","#2ecc71"];
+          const paradasUnicas = [...new Set(pkgs.map(p => p.paradaOrig).filter(x => x != null))];
           pkgs.forEach((p, pi) => {
             const checked = (p && p.ok) ? "checked" : "";
             const okClass = (p && p.ok) ? " ok" : "";
-            html += '<div class="pkg-line' + okClass + '"><input type="checkbox" data-stop="' + i + '" data-pkg="' + pi + '" ' + checked + ' /> ' + (p.tn || p) + "</div>";
+            const tn = (p && p.tn) ? p.tn : (p || "");
+            const orig = p && p.paradaOrig;
+            const corIdx = paradasUnicas.indexOf(orig);
+            const cor = (corIdx >= 0) ? cores[corIdx % cores.length] : "#93a4b8";
+            const tag = (orig != null) ? '<span style="background:' + cor + ';color:#fff;padding:1px 6px;border-radius:4px;font-size:0.75rem;margin-right:6px;">P' + orig + '</span>' : '';
+            html += '<div class="pkg-line' + okClass + '" style="border-left:3px solid ' + cor + ';padding-left:6px;">' +
+              '<input type="checkbox" data-stop="' + i + '" data-pkg="' + pi + '" ' + checked + ' /> ' +
+              tag + tn + "</div>";
           });
         } else {
           const checked = s.ok ? "checked" : "";
@@ -491,7 +501,7 @@
         if (l.parada != null && !isNaN(l.parada) && !map[k].paradas.includes(l.parada)) {
           map[k].paradas.push(l.parada);
         }
-        if (l.pacote) map[k].pacotes.push(l.pacote);
+        if (l.pacote) map[k].pacotes.push({ tn: l.pacote, paradaOrig: l.parada });
         if (l.endereco && l.endereco.length > (map[k].endereco || "").length) map[k].endereco = l.endereco;
         if (l.lat && !map[k].lat) map[k].lat = l.lat;
         if (l.lng && !map[k].lng) map[k].lng = l.lng;
