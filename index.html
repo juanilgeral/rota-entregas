@@ -244,7 +244,14 @@
     }
 
     function chaveEndereco(end) {
-      return norm(end).replace(/[,.\-]/g, " ").replace(/\s+/g, " ");
+      let s = norm(end).replace(/[,.\-]/g, " ").replace(/\s+/g, " ");
+      // Extrai o número da casa/prédio para não misturar endereços próximos
+      const m = s.match(/\b(\d{1,5})\b/);
+      const num = m ? m[1] : "";
+      // Remove palavras muito genéricas e mantém rua + número
+      s = s.replace(/\b(casa|apto|apartamento|bl|bloco|qd|quadra|lt|lote|n|num|numero)\b/g, " ");
+      s = s.replace(/\s+/g, " ").trim();
+      return s + (num ? "|n" + num : "");
     }
 
     function semParada(s) {
@@ -503,7 +510,8 @@
         }
         if (l.pacote) {
           const tnStr = (typeof l.pacote === "object") ? (l.pacote.tn || "") : String(l.pacote);
-          if (tnStr) map[k].pacotes.push({ tn: tnStr, paradaOrig: l.parada, ok: !!(l.pacote && l.pacote.ok) });
+          const orig = (typeof l.pacote === "object" && l.pacote.paradaOrig != null) ? l.pacote.paradaOrig : l.parada;
+          if (tnStr) map[k].pacotes.push({ tn: tnStr, paradaOrig: orig, ok: !!(l.pacote && l.pacote.ok) });
         }
         if (l.endereco && l.endereco.length > (map[k].endereco || "").length) map[k].endereco = l.endereco;
         if (l.lat && !map[k].lat) map[k].lat = l.lat;
