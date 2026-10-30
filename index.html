@@ -330,7 +330,7 @@
           pkgs.forEach((p, pi) => {
             const checked = (p && p.ok) ? "checked" : "";
             const okClass = (p && p.ok) ? " ok" : "";
-            const tn = (p && p.tn) ? p.tn : (p || "");
+            const tn = (p && typeof p.tn === "string") ? p.tn : (typeof p === "string" ? p : (p && p.tn ? String(p.tn) : ""));
             const orig = p && p.paradaOrig;
             const corIdx = paradasUnicas.indexOf(orig);
             const cor = (corIdx >= 0) ? cores[corIdx % cores.length] : "#93a4b8";
@@ -501,7 +501,10 @@
         if (l.parada != null && !isNaN(l.parada) && !map[k].paradas.includes(l.parada)) {
           map[k].paradas.push(l.parada);
         }
-        if (l.pacote) map[k].pacotes.push({ tn: l.pacote, paradaOrig: l.parada });
+        if (l.pacote) {
+          const tnStr = (typeof l.pacote === "object") ? (l.pacote.tn || "") : String(l.pacote);
+          if (tnStr) map[k].pacotes.push({ tn: tnStr, paradaOrig: l.parada, ok: !!(l.pacote && l.pacote.ok) });
+        }
         if (l.endereco && l.endereco.length > (map[k].endereco || "").length) map[k].endereco = l.endereco;
         if (l.lat && !map[k].lat) map[k].lat = l.lat;
         if (l.lng && !map[k].lng) map[k].lng = l.lng;
