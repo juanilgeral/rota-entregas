@@ -132,6 +132,10 @@
     .stop.concluida { opacity: 0.55; }
     .stop.semnum { border: 1px dashed #f5c542; }
     .stop.semnum .badge { background: #8a6d12; font-size: 0.75rem; }
+
+    .stop.multi { border-left: 4px solid #7ee0a8; }
+    .stop.juntas { border-left: 4px solid #f5c542; }
+
   </style>
 </head>
 <body>
@@ -273,18 +277,23 @@
         normPkgs(s);
         const li = document.createElement("li");
         const sem = semParada(s);
-        li.className = "stop" + (sem ? " semnum" : "");
         const paradasTxt = (s.paradas && s.paradas.length) ? s.paradas.join(", ") : (sem ? "S/N" : String(s.parada || ""));
         const pkgs = s.pacotes || [];
+        const multiParada = s.paradas && s.paradas.length > 1;
+        const multiPkg = pkgs.length > 1;
+        li.className = "stop" + (sem ? " semnum" : "") + (multiParada ? " juntas" : "") + (multiPkg ? " multi" : "");
+        // badge diferente quando tem várias paradas juntas
+        const badgeStyle = multiParada ? ' style="background:#f5c542;color:#1a2330;"' : '';
         let html =
-          '<div class="stop-top"><div class="badge">' + (paradasTxt || "S/N") + '</div><div>' +
+          '<div class="stop-top"><div class="badge"' + badgeStyle + '>' + (paradasTxt || "S/N") + '</div><div>' +
           "<h3>" + (i + 1) + "º no trajeto · " + (s.endereco || "") + "</h3>";
-        if (s.paradas && s.paradas.length > 1) {
-          html += '<div class="pkgs" style="color:#f5c542;">Paradas do romaneio juntas: ' + paradasTxt + '</div>';
+        if (multiParada) {
+          html += '<div class="pkgs" style="color:#f5c542;font-weight:700;">Paradas do romaneio juntas: ' + paradasTxt + '</div>';
         }
         if (sem) html += '<div class="pkgs">Sem parada na etiqueta — deixar por último</div>';
         if (pkgs.length) {
-          html += '<div class="pkgs">' + pkgs.length + " pacote(s)</div>";
+          const pkgColor = multiPkg ? ' style="color:#7ee0a8;font-weight:700;"' : '';
+          html += '<div class="pkgs"' + pkgColor + '>' + pkgs.length + " pacote(s)</div>";
           pkgs.forEach(p => {
             html += '<div class="pkg-line">' + (p.tn || p) + "</div>";
           });
