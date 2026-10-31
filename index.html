@@ -318,12 +318,12 @@
         const multiPkg = pkgs.length > 1;
         li.className = "stop" + (sem ? " semnum" : "") + (multiParada ? " juntas" : "") + (multiPkg ? " multi" : "");
         // badge diferente quando tem várias paradas juntas
-        const badgeStyle = multiParada ? ' style="background:#f5c542;color:#1a2330;"' : '';
+        const badgeStyle = multiParada ? ' style="background:#f5c542;color:#1a2330;font-size:0.75rem;"' : '';
         let html =
           '<div class="stop-top"><div class="badge"' + badgeStyle + '>' + (paradasTxt || "S/N") + '</div><div>' +
           "<h3>" + (i + 1) + "º no trajeto · " + (s.endereco || "") + "</h3>";
         if (multiParada) {
-          html += '<div class="pkgs" style="color:#f5c542;font-weight:700;">Paradas do romaneio juntas: ' + paradasTxt + '</div>';
+          html += '<div class="pkgs" style="background:#3a2a12;color:#f5c542;font-weight:700;padding:6px 8px;border-radius:8px;margin:6px 0;">⚠ Mesmo endereço — paradas ' + paradasTxt + ' juntas (não precisa voltar)</div>';
         }
         if (sem) html += '<div class="pkgs">Sem parada na etiqueta — deixar por último</div>';
         const concluida = !pendentes(s);
@@ -452,7 +452,7 @@
     }
 
     async function computeChunk(key, origin, group) {
-      if (group.length === 1) return group;
+      if (group.length === 1) return { ordered: group, distanceMeters: 0 };
       const destination = group[group.length - 1];
       const intermediates = group.slice(0, -1).map(s => ({ address: s.endereco }));
       const body = {
@@ -478,12 +478,12 @@
         const msg = data.error?.message || JSON.stringify(data);
         throw new Error(msg);
       }
-      const idx = data.routes?.[0]?.optimizedIntermediateWaypointIndex;
-      if (!idx || !idx.length) return group;
-      const ordered = idx
-        .map(i => group[i])
-        .filter(Boolean); // remove undefined se o índice vier inválido
-      return ordered.concat(destination);
+      const route = data.routes?.[0];
+      const idx = route?.optimizedIntermediateWaypointIndex;
+      const dist = route?.distanceMeters || 0;
+      if (!idx || !idx.length) return { ordered: group, distanceMeters: dist };
+      const ordered = idx.map(i => group[i]).filter(Boolean);
+      return { ordered: ordered.concat(destination), distanceMeters: dist };
     }
 
     function agruparPorEndereco(linhas) {
@@ -553,11 +553,16 @@
       try {
         const ordered = [];
         let start = origem;
+        let totalMeters = 0;
+        window._ultimaDistancia = 0;
         for (const grupo of grupos) {
-          const parte = await computeChunk(key, start, grupo);
+          const resultado = await computeChunk(key, start, grupo);
+          const parte = resultado.ordered || resultado;
+          totalMeters += resultado.distanceMeters || 0;
           ordered.push(...parte);
           start = parte[parte.length - 1].endereco;
         }
+        window._ultimaDistancia = totalMeters;
         const vistos = {};
         lastOrdered = porUltimoSemNumero(ordered.filter(s => {
           if (!s) return false;
@@ -569,6 +574,7 @@
         }).concat(avulsas));
         trecho = 0;
         mostrarOrdem(lastOrdered);
+        if (totalMeters > 0) calcularCustos(totalMeters, contarConcluidas());
         salvarCampos();
         ligarGps();
         statusEl.className = "ok";
@@ -791,6 +797,7 @@
         listaEl.value = stops.map(s => s.endereco).join("\n");
         lastOrdered = stops.slice();
         mostrarOrdem(lastOrdered);
+        if (totalMeters > 0) calcularCustos(totalMeters, contarConcluidas());
         salvarCampos();
         ligarGps();
         const pkgs = linhas.length;
