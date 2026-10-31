@@ -797,7 +797,6 @@
         listaEl.value = stops.map(s => s.endereco).join("\n");
         lastOrdered = stops.slice();
         mostrarOrdem(lastOrdered);
-        if (totalMeters > 0) calcularCustos(totalMeters, contarConcluidas());
         salvarCampos();
         ligarGps();
         const pkgs = linhas.length;
