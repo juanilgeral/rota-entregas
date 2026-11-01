@@ -329,7 +329,7 @@
           '<div class="stop-top"><div class="badge"' + badgeStyle + '>' + (paradasTxt || "S/N") + '</div><div>' +
           "<h3>" + (i + 1) + "º no trajeto · " + (s.endereco || "") + "</h3>";
         if (multiParada) {
-          html += '<div class="pkgs" style="background:#3a2a12;color:#f5c542;font-weight:700;padding:6px 8px;border-radius:8px;margin:6px 0;">⚠ Mesmo endereço — paradas ' + paradasTxt + ' juntas (não precisa voltar)</div>';
+          html += '<div class="pkgs" style="background:#5a3a00;color:#ffd54a;font-weight:800;padding:8px 10px;border-radius:8px;margin:6px 0;border:1px solid #f5c542;">⚠ MESMO ENDEREÇO — paradas do romaneio ' + paradasTxt + ' juntas. Entregue tudo aqui.</div>';
         }
         if (sem) html += '<div class="pkgs">Sem parada na etiqueta — deixar por último</div>';
         const concluida = !pendentes(s);
@@ -497,7 +497,8 @@
       const ordem = [];
       for (const l of linhas) {
         // Agrupa SEMPRE pelo endereço normalizado (mesmo que a parada do romaneio seja diferente)
-        const k = chaveEndereco(l.endereco || "") || l.chave || "";
+        // Usa a chave já calculada (lat/lng tem prioridade) ou recalcula pelo endereço
+        const k = l.chave || ("ad:" + chaveEndereco(l.endereco || ""));
         if (!k) continue;
         if (!map[k]) {
           map[k] = {
@@ -760,10 +761,11 @@
       const lat = colLat ? Number(String(row[colLat]).replace(",", ".")) : null;
       const lng = colLng ? Number(String(row[colLng]).replace(",", ".")) : null;
       let chave = "";
-      if (lat && lng && !isNaN(lat) && !isNaN(lng)) {
-        chave = lat.toFixed(5) + "," + lng.toFixed(5);
+      // Preferência: lat/lng arredondado (~11m) = mesmo lugar físico
+      if (lat && lng && !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
+        chave = "ll:" + lat.toFixed(4) + "," + lng.toFixed(4);
       } else {
-        chave = chaveEndereco(endereco.replace(/\b(apto|ap|bl|bloco|casa|fund|apartamento)\b.*/i, ""));
+        chave = "ad:" + chaveEndereco(endereco);
       }
       return {
         parada: paradaRaw ? Number(paradaRaw) : null,
