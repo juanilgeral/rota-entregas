@@ -244,14 +244,20 @@
     }
 
     function chaveEndereco(end) {
-      let s = norm(end).replace(/[,.\-]/g, " ").replace(/\s+/g, " ");
-      // Extrai o número da casa/prédio para não misturar endereços próximos
-      const m = s.match(/\b(\d{1,5})\b/);
-      const num = m ? m[1] : "";
-      // Remove palavras muito genéricas e mantém rua + número
-      s = s.replace(/\b(casa|apto|apartamento|bl|bloco|qd|quadra|lt|lote|n|num|numero)\b/g, " ");
-      s = s.replace(/\s+/g, " ").trim();
-      return s + (num ? "|n" + num : "");
+      let s = norm(end).replace(/[,.\-\/]/g, " ").replace(/\s+/g, " ").trim();
+      // Remove CEP (5 dígitos ou 5-3)
+      s = s.replace(/\b\d{5}\b/g, " ").replace(/\b\d{8}\b/g, " ");
+      // Pega o número da casa (primeiro número de 1-5 dígitos que não parece CEP)
+      const nums = s.match(/\b(\d{1,5})\b/g) || [];
+      const num = nums.length ? nums[0] : "";
+      // Nome da rua: remove números e palavras genéricas
+      let rua = s.replace(/\b\d+\b/g, " ")
+        .replace(/\b(casa|apto|apartamento|ap|bl|bloco|qd|quadra|lt|lote|n|num|numero|fund|fundo|sala|loja|galpao)\b/g, " ")
+        .replace(/\s+/g, " ").trim();
+      // Pega só as primeiras palavras significativas da rua
+      const palavras = rua.split(" ").filter(w => w.length > 2).slice(0, 4);
+      rua = palavras.join(" ");
+      return rua + (num ? "|n" + num : "");
     }
 
     function semParada(s) {
@@ -491,7 +497,7 @@
       const ordem = [];
       for (const l of linhas) {
         // Agrupa SEMPRE pelo endereço normalizado (mesmo que a parada do romaneio seja diferente)
-        const k = l.chave || chaveEndereco(l.endereco || "");
+        const k = chaveEndereco(l.endereco || "") || l.chave || "";
         if (!k) continue;
         if (!map[k]) {
           map[k] = {
